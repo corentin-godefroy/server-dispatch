@@ -37,7 +37,28 @@ deploy:
 
 ## Recommendations
 
-- For single files, it is recommended to create a dedicated directory for the specific server.  
-- For files that need to be deployed to multiple servers, use a common directory and organize files in a structured tree.  
+- For files for single servers, it is recommended to create a dedicated directory for the specific server. Then in the config.yml, you just need to indicate the server directory.
+- For files that need to be deployed to multiple servers, use a common directory and organize files in a structured tree. The differenciation should be made in the config.yml.
 - Technically, you could place all files in a flat structure, but this is not recommended for maintainability.
 
+## Example
+
+```yml
+targets:
+  server1: SERVER_SECRET1
+  server2: SERVER_SECRET2
+  server3: SERVER_SECRET3
+
+deploy:
+  - source: /common #all files under common should be synchronized
+    destination: / #root of destination
+    targets: [server1, server2, server3]
+
+  - srouce: /server1
+    destination: /
+    targets: [server1]
+
+  - source: /mods
+    destination: /mods
+    targets: [server1, server2]
+```
