@@ -27,12 +27,12 @@ All other secrets are simple text values:
 Server secrets must be referenced in the `targets` section of the `config.yml` file:
 ```yml
 targets:
-  server1: SECRET_SERVER1 # reference to the secret
+  target_name: GITHUB_SECRET # reference to the secret
 
 deploy:
   - source: # file or directory in the GitHub repository. All files under the directory itself (not recursively) are sent to the destination
     destination: # destination directory on the server
-    targets: [] # list of targets to synchronize
+    targets: [] # list of target_names to synchronize, separated by coma (",")
 ```
 
 ## Recommendations
