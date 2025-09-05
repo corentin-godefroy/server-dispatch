@@ -30,7 +30,7 @@ targets:
   target_name: GITHUB_SECRET # reference to the secret
 
 deploy:
-  - source: # file or directory in the GitHub repository. All files under the directory itself (not recursively) are sent to the destination
+  - source: # file or directory in the GitHub repository. All files under the directory itself (not inluded) are recursively sent to the destination
     destination: # destination directory on the server
     targets: [] # list of target_names to synchronize, separated by coma (",")
 ```
