@@ -39,7 +39,7 @@ deploy:
 
 - For files for single servers, it is recommended to create a dedicated directory for the specific server. Then in the config.yml, you just need to indicate the server directory.
 - For files that need to be deployed to multiple servers, use a common directory and organize files in a structured tree. The differenciation should be made in the config.yml.
-- Technically, you could place all files in a flat structure, but this is not recommended for maintainability.
+- Technically, you could place all files in a flat structure, but this is not recommended for maintainability and ease of use.
 
 ## Example
 
