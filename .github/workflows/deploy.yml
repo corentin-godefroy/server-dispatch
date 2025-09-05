@@ -1,0 +1,135 @@
+name: Deploy
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: deploy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install minimal tools (jq, wget)
+        run: |
+          set -eux
+          sudo apt-get update -y
+          sudo apt-get install -y wget jq
+          # installer yq de façon fiable dans /usr/local/bin (nécessite sudo)
+          sudo wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+          # vérifier
+          /usr/local/bin/yq --version
+
+      - name: Quick deploy according to config.yml
+        env:
+          HOST: ${{ secrets.HOST }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+          TOKEN: ${{ secrets.CLIENT_API_KEY }}
+          PRIVATE_KEY: ${{secrets.PRIVATE_KEY}}
+          TOKEN_API: ${{secrets.TOKEN_API}}
+          SECRET_ARCLIGHT1: ${{ secrets.ARCLIGHT1 }}
+          SECRET_ARCLIGHT2: ${{ secrets.ARCLIGHT2 }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$PRIVATE_KEY" > ~/.ssh/id_25519
+          chmod 600 ~/.ssh/id_25519
+
+          if [ -z "$HOST" ]; then
+            echo "ERROR: HOST is empty!"
+            exit 1
+          fi
+          
+          set -euo pipefail
+          
+          CONFIG_FILE="config.yml"
+          
+          # Tableau associatif pour stocker les UUIDs des serveurs à redémarrer
+          declare -A SERVERS_TO_RESTART=()
+          
+          # Parcourir chaque bloc "deploy"
+          DEPLOY_COUNT=$(yq eval '.deploy | length' "$CONFIG_FILE")
+          for i in $(seq 0 $((DEPLOY_COUNT - 1))); do
+            SOURCE_PATH=$(yq eval -r ".deploy[$i].source" "$CONFIG_FILE")
+            DESTINATION_PATH=$(yq eval -r ".deploy[$i].destination" "$CONFIG_FILE")
+            TARGETS=$(yq eval -r ".deploy[$i].targets[]?" "$CONFIG_FILE" || true)
+          
+            for TARGET in $TARGETS; do
+              echo ">>> Deploying '$SOURCE_PATH' -> '$DESTINATION_PATH' for target='$TARGET'"
+          
+              # récupérer le nom du secret pour la cible courante
+              # Récupère le nom du secret pour la cible courante (ex: SECRET_ARCLIGHT1)
+              SECRET_NAME=$(yq eval -r ".targets.$TARGET" "$CONFIG_FILE")
+              
+              # Indirect expansion pour lire la variable d'env du même nom
+              SERVER_SECRET_JSON="${!SECRET_NAME:-}"
+              
+              SFTP_USER=$(echo "$SERVER_SECRET_JSON" | jq -r '.user // empty')
+              SERVER_UUID=$(echo "$SERVER_SECRET_JSON" | jq -r '.uuid // empty')
+              
+              if [ -z "$SFTP_USER" ] || [ -z "$SERVER_UUID" ]; then
+                echo "ERROR: Missing user/uuid for target '$TARGET' (secret: $SECRET_NAME)"
+                exit 1
+              fi
+
+              echo "Connecting to SFTP host '$HOST' as user '$SFTP_USER'"
+          
+              # Vérifie que le source existe
+              if [ -d "$SOURCE_PATH" ]; then
+                # dossier → transférer récursivement avec sftp
+                echo ">>> Deploying directory '$SOURCE_PATH' -> '$DESTINATION_PATH' via SFTP"
+                  
+                # Crée un batch temporaire pour SFTP
+                SFTP_BATCH=$(mktemp)
+                echo "mkdir -p $DESTINATION_PATH" > "$SFTP_BATCH"
+                echo "put -r $SOURCE_PATH/* $DESTINATION_PATH/" >> "$SFTP_BATCH"
+                  
+                # Connexion SFTP
+                sftp -i ~/.ssh/id_25519 -o StrictHostKeyChecking=no -P 2022 "$SFTP_USER@$HOST" < "$SFTP_BATCH"
+              
+                # Supprime le batch
+                rm -f "$SFTP_BATCH"
+              
+              elif [ -f "$SOURCE_PATH" ]; then
+                # fichier unique → put
+                echo ">>> Deploying file '$SOURCE_PATH' -> '$DESTINATION_PATH' via SFTP"
+                
+                # Crée un batch temporaire
+                SFTP_BATCH=$(mktemp)
+                echo "mkdir -p $DESTINATION_PATH" > "$SFTP_BATCH"
+                echo "put $SOURCE_PATH $DESTINATION_PATH/$(basename "$SOURCE_PATH")" >> "$SFTP_BATCH"
+                
+                # Connexion SFTP
+                sftp -i ~/.ssh/id_25519 -o StrictHostKeyChecking=no -P 2022 "$SFTP_USER@$HOST" < "$SFTP_BATCH"
+            
+                # Supprime le batch
+                rm -f "$SFTP_BATCH"
+            
+              else
+                echo "WARNING: source '$SOURCE_PATH' not found, skipping"
+              fi
+                        
+              # Ajouter UUID à la liste des serveurs à redémarrer
+              if [ -n "$SERVER_UUID" ]; then
+                SERVERS_TO_RESTART["$SERVER_UUID"]=1
+              fi
+            done
+          done
+          
+          # Redémarrage des serveurs modifiés (une seule fois par UUID)
+          echo ">>> Restarting touched servers..."
+          for UUID in "${!SERVERS_TO_RESTART[@]}"; do
+            echo "Restarting server UUID: $UUID"
+            curl --location \
+              "https://$HOST/api/client/servers/$UUID/power" \
+              --header "Accept: application/json" \
+              --header "Content-Type: application/json" \
+              --header "Authorization: Bearer $TOKEN" \
+              --data '{"signal":"restart"}'
+                  
+          done
+          
+          echo "All deployments and restarts completed."
