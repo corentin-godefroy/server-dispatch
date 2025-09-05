@@ -1,0 +1,8 @@
+targets:
+  arclight1: SECRET_ARCLIGHT1
+  arclight2: SECRET_ARCLIGHT2
+
+deploy:
+  - source: test.txt
+    destination: /
+    targets: [arclight1, arclight2]
