@@ -1,7 +1,7 @@
 # Server Dispatch
 
 This is a small workflow that uses the Pelican API to upload specific files to Minecraft or any other server via SFTP.  
-All sensitive information is stored in GitHub Secrets. Once synchronization terminated, servers are automatically restarted.
+All sensitive information is stored in GitHub Secrets. Once synchronization is complete, servers are automatically restarted.
 
 ## Server Secrets
 
